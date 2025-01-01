@@ -10,6 +10,7 @@ dependencies = [
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",
     "langchain-ollama>=0.2.2",
+    "marimo>=0.10.9",
     "polars>=1.18.0",
     "requests>=2.32.3",
 ]
