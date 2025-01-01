@@ -1,14 +1,28 @@
 import marimo
 
 __generated_with = "0.10.9"
-app = marimo.App()
+app = marimo.App(width="medium")
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(
         r"""
-        # GoodReads Scraping
+        # GoodReads Review Summariser
+
+        GoodReads Scraping Reference: https://rakaarfi.medium.com/scrape-goodreads-book-reviews-using-python-a53252284726
+
+        ## How to Use?
+
+        1. Click the "SHARE" button (represented by an icon) in the upper right corner of your favourite book's Goodreads page.
+        2. Click the "Copy URL" button.
+        3. Paste the link on this page! That's it!
+
+        ## How it Works?
+
+        The programme scrapes the GoodReads webpage and extracts the review contents for the [llama3.2:3b](https://ollama.com/library/llama3.2) model to generate the summary.
+
+        ---
         """
     )
     return
@@ -16,12 +30,53 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        Reference: https://rakaarfi.medium.com/scrape-goodreads-book-reviews-using-python-a53252284726
-        """
-    )
+    url = mo.ui.text(label='GoodReads Link (Via Share)', placeholder='Required', kind='url', full_width=True)
+    run = mo.ui.run_button(label='Summarise!', kind='success')
+    return run, url
+
+
+@app.cell
+def _(mo, run, url):
+    mo.vstack([url, mo.center(run)])
     return
+
+
+@app.cell
+def _(
+    extract_content,
+    find_review,
+    llm_summarise,
+    mo,
+    review_cleaning,
+    run,
+    url,
+):
+    if run.value:
+        mo.output.append('Step 1: Start Extracting Reviews...')
+        try:
+            title, author, review = find_review(url.value)
+        except Exception as e:
+            mo.stop(predicate=True, output=mo.md(f'There is an error in Step 1: {e}'))
+        mo.output.append('Reviews Extracted!\n')
+        mo.output.append('Step 2: Cleaning Reviews...')
+        try:
+            df = review_cleaning(review)
+            content = extract_content(df)
+        except Exception as e:
+            mo.stop(predicate=True, output=mo.md(f'There is an error in Step 2: {e}'))
+        mo.output.append('Reviews Are Clean!')
+        mo.output.append('Step 3: LLM Summarising...')
+        try:
+            ans = llm_summarise(content)
+        except Exception as e:
+            mo.stop(predicate=True, output=mo.md(f'There is an error in Step 3: {e}'))
+        mo.output.append('Finished!\n')
+        mo.output.replace(mo.md(f"""# Summary
+
+        The reviews from the book '{title}' by {author} have been summarised as follows:
+
+        {ans}"""))
+    return ans, author, content, df, review, title
 
 
 @app.cell
@@ -30,13 +85,13 @@ def _():
     from bs4 import BeautifulSoup as bs
     import polars as pl
     from langchain_ollama import ChatOllama
-    return ChatOllama, bs, pl, requests
+    import marimo as mo
+    return ChatOllama, bs, mo, pl, requests
 
 
 @app.cell
 def _():
-    system_prompt = """
-    Please generate a summary on the reviews provided by the user. It should mention the postivie aspects, critical feedback, and a balanced conclusion based on the provided information.
+    system_prompt = """Please generate an English summary on the reviews provided by the user. It should mention the postivie aspects, critical feedback, and a balanced conclusion based on the provided information.
 
     Specifically, you should include the following points:
 
@@ -52,7 +107,7 @@ def _():
 
 @app.cell
 def _(bs, requests):
-    def find_review(url: str) -> list:
+    def find_review(url: str) -> tuple:
         """
         This function scrapes the reviews from a Goodreads book page.
         It takes the URL of the book page as input and returns a list of dictionaries,
@@ -62,7 +117,7 @@ def _(bs, requests):
         url (str): The URL of the Goodreads book page.
 
         Returns:
-        list: A list of dictionaries, where each dictionary contains the details of a single review.
+        tuple: A tuple containing the title of the book, the author of the book, and a list of dictionaries
         """
 
 
@@ -74,6 +129,10 @@ def _(bs, requests):
         response = requests.get(url, headers=headers)
         # Parse the HTML content using BeautifulSoup
         soup = bs(response.content, 'html.parser')
+
+        # Extract the book title and author name
+        title = soup.find('h1', class_='Text Text__title1').get_text()
+        author = soup.find('span', class_='ContributorLink__name').get_text()
 
         # Find all div tags containing review sections
         reviews_list = soup.find_all('div', class_='ReviewsList')
@@ -89,36 +148,36 @@ def _(bs, requests):
         for idx, i in enumerate(articles):
             # Extract Reviewer Profile Information
             profile_info = i.find('section', class_='ReviewerProfile__info')
-            
+
             # Extract the reviewer's name and profile link
             name = profile_info.find('a').get_text()
             link_profile = profile_info.find('a').get('href')
-            
+
             # Extract the number of books (if available), reviews, and followers and check if the reviewer is an author
             profile_meta = profile_info.find('div', class_='ReviewerProfile__meta')
             spans = profile_meta.find_all('span')  # Find all span tags inside profile_meta
-            
+
             # Initialize default values
             check_author = False
             books_amount = None
             reviews_amount = 'Not Found'
             followers_amount = 'Not Found'
-            
+
             for span in spans:
                 span_text = span.get_text(strip=True)
-                
+
                 # Check if the span contains 'books'
                 if 'books' in span_text:
                     books_amount = span_text
-                
+
                 # Check if the span contains 'reviews'
                 elif 'reviews' in span_text:
                     reviews_amount = span_text
-                
+
                 # Check if the span contains 'followers'
                 elif 'followers' in span_text:
                     followers_amount = span_text
-                
+
                 # Check if the span contains 'Author'
                 elif 'Author' in span_text:
                     check_author = span_text
@@ -153,7 +212,7 @@ def _(bs, requests):
             # Append the review data to the list of all reviews
             all_reviews.append(data)
 
-        return all_reviews
+        return (title, author, all_reviews)
     return (find_review,)
 
 
@@ -183,7 +242,7 @@ def _(pl):
                 .str.replace(' ', '').str.replace(',', '').cast(pl.Int32).alias('Followers Amount'),
             pl.col('Rating').str.extract(r'Rating (\d+) out of').cast(pl.Int32).alias('Rating')
             )
-        
+
         return df
     return (review_cleaning,)
 
@@ -200,7 +259,7 @@ def _(pl):
         Returns:
         str: A string containing the review content.
         """
-        
+
         content = df.select(pl.col('Content').str.join('\n')).to_dicts()
         return content[0]['Content']
     return (extract_content,)
@@ -232,42 +291,6 @@ def _(ChatOllama, system_prompt):
         ans = llm.invoke(messages).content
         return ans
     return (llm_summarise,)
-
-
-@app.cell
-def _(find_review):
-    review = find_review('https://www.goodreads.com/book/show/62047984-yellowface')
-    return (review,)
-
-
-@app.cell
-def _(review, review_cleaning):
-    df = review_cleaning(review)
-    return (df,)
-
-
-@app.cell
-def _(df, extract_content):
-    content = extract_content(df)
-    return (content,)
-
-
-@app.cell
-def _(content, llm_summarise):
-    ans = llm_summarise(content)
-    return (ans,)
-
-
-@app.cell
-def _(ans):
-    print(ans)
-    return
-
-
-@app.cell
-def _():
-    import marimo as mo
-    return (mo,)
 
 
 if __name__ == "__main__":
