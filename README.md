@@ -1,6 +1,6 @@
-# GoodReads Review Summariser
+# GoodReads-Summariser
 
-Summarise book reviews with the power of LLM.
+Summarise book reviews from GoodReads with the power of LLM.
 
 Want to know more about a book before reading it?
 
