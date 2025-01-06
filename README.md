@@ -8,7 +8,7 @@ LLM can help you! Use LLM to summarise the reviews.
 
 ## Installation
 
-1. Clone the repo
+1. Clone the repo.
 2. Create a Python environment as specified in `pyproject.toml`.
 3. Download [Ollama](https://ollama.com/) and pull the [llama3.2:3b](https://ollama.com/library/llama3.2) model.
 4. Execute `demo.py` using `marimo run demo.py`.
