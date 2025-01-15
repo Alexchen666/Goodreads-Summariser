@@ -1,4 +1,4 @@
-# Goodreads-Summariser
+# Goodreads Summariser
 
 Summarise book reviews from GoodReads with the power of LLM.
 
